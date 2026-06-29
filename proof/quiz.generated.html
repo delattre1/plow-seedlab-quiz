@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiz</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --accent: #6366f1;
+    --accent-soft: #4338ca;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --border: #334155;
+    --correct: #22c55e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: linear-gradient(160deg, #0f172a, #1e1b4b);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .card {
+    width: 100%;
+    max-width: 540px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 28px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+  }
+  .progress {
+    font-size: 13px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+  #question {
+    font-size: 24px;
+    font-weight: 650;
+    line-height: 1.3;
+    margin: 0 0 22px;
+  }
+  #options {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 26px;
+  }
+  .option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+    width: 100%;
+    padding: 15px 16px;
+    border-radius: 12px;
+    border: 1.5px solid var(--border);
+    background: #0f172a;
+    color: var(--text);
+    font-size: 16px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s, transform .05s;
+  }
+  .option:hover { border-color: var(--accent); }
+  .option:active { transform: scale(.99); }
+  .option .marker {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    flex: 0 0 auto;
+    display: inline-block;
+    position: relative;
+  }
+  .option[aria-selected="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .option[aria-selected="true"] .marker {
+    border-color: #fff;
+    background:
+      radial-gradient(circle at center, #fff 0 6px, transparent 7px);
+  }
+  .nav {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  button.btn {
+    flex: 1;
+    padding: 13px 16px;
+    border-radius: 11px;
+    border: none;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    background: #334155;
+    color: var(--text);
+    transition: background .15s, opacity .15s;
+  }
+  button.btn:hover { background: #41506b; }
+  button.btn.primary { background: var(--accent); color: #fff; }
+  button.btn.primary:hover { background: #4f46e5; }
+  #result {
+    text-align: center;
+    padding: 14px 0 4px;
+  }
+  #score {
+    font-size: 30px;
+    font-weight: 750;
+    margin: 8px 0 4px;
+  }
+  .result-sub { color: var(--muted); margin-bottom: 20px; }
+  .restart-row { margin-top: 14px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div id="quiz">
+      <div class="progress">Question <span id="qnum">1</span> of 5</div>
+      <h1 id="question" data-index="0" data-total="5"></h1>
+      <div id="options"></div>
+      <div class="nav">
+        <button id="prev" class="btn">Previous</button>
+        <button id="next" class="btn">Next</button>
+        <button id="submit" class="btn primary">Submit</button>
+      </div>
+    </div>
+
+    <div id="result" hidden>
+      <div class="result-sub">Your result</div>
+      <div id="score" data-score="0" data-total="5">You scored 0 / 5</div>
+      <div class="result-sub">Nice work!</div>
+    </div>
+
+    <div class="nav restart-row">
+      <button id="restart" class="btn">Restart</button>
+    </div>
+  </main>
+
+<script>
+(function () {
+  "use strict";
+
+  // FIXED question bank — verbatim from the seed contract.
+  var BANK = [
+    { q: "What is 2 + 2?", options: { a: "3", b: "4", c: "5", d: "22" }, correct: "b" },
+    { q: "Which planet is closest to the Sun?", options: { a: "Earth", b: "Venus", c: "Mercury", d: "Mars" }, correct: "c" },
+    { q: "How many sides does a triangle have?", options: { a: "2", b: "3", c: "4", d: "5" }, correct: "b" },
+    { q: "What is the capital of France?", options: { a: "Berlin", b: "Madrid", c: "Rome", d: "Paris" }, correct: "d" },
+    { q: "What is 10 ÷ 2?", options: { a: "2", b: "4", c: "5", d: "20" }, correct: "c" }
+  ];
+  var KEYS = ["a", "b", "c", "d"];
+  var TOTAL = BANK.length; // 5
+
+  var state = {
+    index: 0,
+    answers: new Array(TOTAL).fill(null) // remembered key per question, or null
+  };
+
+  var els = {
+    question: document.getElementById("question"),
+    options: document.getElementById("options"),
+    qnum: document.getElementById("qnum"),
+    prev: document.getElementById("prev"),
+    next: document.getElementById("next"),
+    submit: document.getElementById("submit"),
+    result: document.getElementById("result"),
+    quiz: document.getElementById("quiz"),
+    score: document.getElementById("score"),
+    restart: document.getElementById("restart")
+  };
+
+  function clamp(i) {
+    return Math.max(0, Math.min(TOTAL - 1, i));
+  }
+
+  function render() {
+    var item = BANK[state.index];
+    els.question.textContent = item.q;
+    els.question.setAttribute("data-index", String(state.index));
+    els.question.setAttribute("data-total", String(TOTAL));
+    els.qnum.textContent = String(state.index + 1);
+
+    var remembered = state.answers[state.index];
+
+    els.options.innerHTML = "";
+    KEYS.forEach(function (key) {
+      var btn = document.createElement("button");
+      btn.className = "option";
+      btn.setAttribute("type", "button");
+      btn.setAttribute("data-key", key);
+      btn.setAttribute("aria-selected", remembered === key ? "true" : "false");
+
+      var marker = document.createElement("span");
+      marker.className = "marker";
+      var label = document.createElement("span");
+      label.className = "label";
+      label.textContent = item.options[key];
+
+      btn.appendChild(marker);
+      btn.appendChild(label);
+
+      btn.addEventListener("click", function () {
+        select(key);
+      });
+      els.options.appendChild(btn);
+    });
+  }
+
+  function select(key) {
+    state.answers[state.index] = key;
+    var opts = els.options.querySelectorAll(".option");
+    for (var i = 0; i < opts.length; i++) {
+      opts[i].setAttribute(
+        "aria-selected",
+        opts[i].getAttribute("data-key") === key ? "true" : "false"
+      );
+    }
+  }
+
+  function go(delta) {
+    state.index = clamp(state.index + delta);
+    render();
+  }
+
+  function submit() {
+    var score = 0;
+    for (var i = 0; i < TOTAL; i++) {
+      if (state.answers[i] !== null && state.answers[i] === BANK[i].correct) {
+        score++;
+      }
+    }
+    els.score.setAttribute("data-score", String(score));
+    els.score.setAttribute("data-total", String(TOTAL));
+    els.score.textContent = "You scored " + score + " / " + TOTAL;
+    els.result.hidden = false;
+  }
+
+  function restart() {
+    state.index = 0;
+    state.answers = new Array(TOTAL).fill(null);
+    els.result.hidden = true;
+    render();
+  }
+
+  els.next.addEventListener("click", function () { go(1); });
+  els.prev.addEventListener("click", function () { go(-1); });
+  els.submit.addEventListener("click", submit);
+  els.restart.addEventListener("click", restart);
+
+  // Initial render: index 0, nothing selected, result hidden.
+  render();
+})();
+</script>
+</body>
+</html>
